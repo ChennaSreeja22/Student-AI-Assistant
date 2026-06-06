@@ -78,6 +78,13 @@ if uploaded_file and api_key:
                 quiz = generate_quiz(client, text, difficulty)
             st.subheader(f"{difficulty} Quiz")
             st.write(quiz)
+            st.download_button(
+                label="Download Quiz",
+                data=quiz,
+                file_name="quiz.txt",
+                mime="text/plain"
+            )
+        
 
     with col3:
         if st.button("Key Points"):

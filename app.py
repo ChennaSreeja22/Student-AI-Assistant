@@ -19,10 +19,24 @@ def summarize_text(client, text):
     )
     return response.choices[0].message.content
 
-def generate_quiz(client, text):
+def generate_quiz(client, text, difficulty):
+    prompt = f"""Generate 5 {difficulty} level multiple choice questions from this material.
+For Easy: simple recall questions.
+For Medium: questions requiring understanding.
+For Hard: questions requiring analysis and application.
+
+Format each as:
+Q1. Question
+a) option
+b) option
+c) option
+d) option
+Answer: correct option
+
+Material: {text}"""
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": "Generate 5 MCQ questions from this material: " + text}]
+        messages=[{"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content
 
@@ -56,11 +70,13 @@ if uploaded_file and api_key:
             st.write(summary)
 
     with col2:
+        st.subheader("Generate Quiz")
+        difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
         if st.button("Generate Quiz"):
             with st.spinner("Generating quiz..."):
                 client = configure_groq(api_key)
-                quiz = generate_quiz(client, text)
-            st.subheader("Quiz")
+                quiz = generate_quiz(client, text, difficulty)
+            st.subheader(f"{difficulty} Quiz")
             st.write(quiz)
 
     with col3:
@@ -70,4 +86,3 @@ if uploaded_file and api_key:
                 points = extract_key_points(client, text)
             st.subheader("Key Points")
             st.write(points)
-            

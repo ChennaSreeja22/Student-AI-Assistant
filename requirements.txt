@@ -1,3 +1,4 @@
 streamlit
 groq
-pymupdfgit add .
+pymupdf
+PyMuPDF

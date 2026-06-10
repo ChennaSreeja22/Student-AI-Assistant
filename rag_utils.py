@@ -1,8 +1,8 @@
-import chromadb
+import faiss
+import numpy as np
 from sentence_transformers import SentenceTransformer
 
 embedder = SentenceTransformer('all-MiniLM-L6-v2')
-client = chromadb.Client()
 
 def chunk_text(text, chunk_size=500):
     words = text.split()
@@ -12,24 +12,15 @@ def chunk_text(text, chunk_size=500):
         chunks.append(chunk)
     return chunks
 
-def store_chunks(chunks, collection_name="pdf_docs"):
-    try:
-        client.delete_collection(collection_name)
-    except:
-        pass
-    collection = client.create_collection(collection_name)
-    embeddings = embedder.encode(chunks).tolist()
-    collection.add(
-        documents=chunks,
-        embeddings=embeddings,
-        ids=[f"chunk_{i}" for i in range(len(chunks))]
-    )
-    return collection
+def store_chunks(chunks):
+    embeddings = embedder.encode(chunks)
+    embeddings = np.array(embeddings).astype('float32')
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(embeddings)
+    return index, chunks
 
-def retrieve_chunks(query, collection, n_results=3):
-    query_embedding = embedder.encode([query]).tolist()
-    results = collection.query(
-        query_embeddings=query_embedding,
-        n_results=n_results
-    )
-    return results['documents'][0]
+def retrieve_chunks(query, index, chunks, n_results=3):
+    query_embedding = embedder.encode([query])
+    query_embedding = np.array(query_embedding).astype('float32')
+    distances, indices = index.search(query_embedding, n_results)
+    return [chunks[i] for i in indices[0]]

@@ -1,5 +1,5 @@
 streamlit
 groq
 pymupdf
-chromadb
+faiss-cpu
 sentence-transformers

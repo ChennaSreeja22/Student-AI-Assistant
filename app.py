@@ -119,13 +119,13 @@ if uploaded_file and api_key:
         st.subheader("Chat with your PDF")
         with st.spinner("Processing PDF for chat..."):
             chunks = chunk_text(text)
-            collection = store_chunks(chunks)
+            index, chunks = store_chunks(chunks)
         st.success(f"PDF processed into {len(chunks)} chunks.")
 
         question = st.text_input("Ask a question from your PDF")
         if st.button("Get Answer") and question:
             with st.spinner("Searching document..."):
-                relevant_chunks = retrieve_chunks(question, collection)
+                relevant_chunks = retrieve_chunks(question, index, chunks)
                 client = configure_groq(api_key)
                 answer = answer_question(client, question, relevant_chunks)
             st.subheader("Answer")

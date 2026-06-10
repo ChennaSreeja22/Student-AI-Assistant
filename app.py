@@ -1,7 +1,7 @@
 import streamlit as st
 import fitz
 from groq import Groq
-from rag_utils import chunk_text, store_chunks, retrieve_chunks
+from rag_utils import chunk_text_with_metadata, store_chunks, retrieve_chunks_with_metadata
 
 def extract_text_from_pdf(uploaded_file):
     text = ""
@@ -53,9 +53,9 @@ def extract_key_points(client, text):
     return response.choices[0].message.content
 
 def answer_question(client, question, relevant_chunks, chat_history):
-    context = "\n\n".join(relevant_chunks)
+    context = "\n\n".join([chunk["text"] for chunk in relevant_chunks])
     messages = [
-        {"role": "system", "content": f"""You are a helpful study assistant. 
+        {"role": "system", "content": f"""You are a helpful study assistant.
 Answer questions based on the following document context.
 If the answer is not in the context, say "I could not find this in the document."
 
@@ -71,10 +71,8 @@ Context:
     )
     return response.choices[0].message.content
 
-# Page config
 st.set_page_config(page_title="Student AI Assistant", page_icon="📚", layout="wide")
 
-# Sidebar
 with st.sidebar:
     st.title("📚 Student AI Assistant")
     st.write("---")
@@ -86,15 +84,15 @@ with st.sidebar:
     st.write("✅ Generate Quiz")
     st.write("✅ Extract Key Points")
     st.write("✅ Chat with PDF")
+    st.write("✅ Source Citations")
 
-# Main area
 st.title("📚 Student AI Assistant")
 st.write("Upload a PDF and start learning smarter.")
 
 if uploaded_file and api_key:
     with st.spinner("Reading PDF..."):
         text = extract_text_from_pdf(uploaded_file)
-        chunks = chunk_text(text)
+        chunks, metadata = chunk_text_with_metadata(text, uploaded_file.name)
         index, chunks = store_chunks(chunks)
 
     st.success(f"PDF loaded and processed into {len(chunks)} chunks.")
@@ -151,10 +149,15 @@ if uploaded_file and api_key:
 
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
-                    relevant_chunks = retrieve_chunks(question, index, chunks)
+                    relevant_results = retrieve_chunks_with_metadata(question, index, metadata)
                     client = configure_groq(api_key)
-                    answer = answer_question(client, question, relevant_chunks, st.session_state.messages)
+                    answer = answer_question(client, question, relevant_results, st.session_state.messages)
                 st.write(answer)
+                st.write("---")
+                st.caption("Sources:")
+                for result in relevant_results:
+                    st.caption(f"📄 {result['file']} — Page ~{result['page']}")
+
             st.session_state.messages.append({"role": "assistant", "content": answer})
 
 else:

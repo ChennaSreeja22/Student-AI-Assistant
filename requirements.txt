@@ -1,4 +1,5 @@
 streamlit
 groq
 pymupdf
-PyMuPDF
+chromadb
+sentence-transformers

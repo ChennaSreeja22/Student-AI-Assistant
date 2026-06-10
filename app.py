@@ -34,13 +34,11 @@ Answer: correct option
 Material: {text}"""
     else:
         prompt = f"""Generate 5 {difficulty} level theory questions from this material.
-These should be short answer or descriptive questions.
 Format each as:
 Q1. Question
 Answer: detailed answer
 
 Material: {text}"""
-
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}]
@@ -54,34 +52,54 @@ def extract_key_points(client, text):
     )
     return response.choices[0].message.content
 
-def answer_question(client, question, relevant_chunks):
+def answer_question(client, question, relevant_chunks, chat_history):
     context = "\n\n".join(relevant_chunks)
-    prompt = f"""Answer the following question based only on the provided context.
+    messages = [
+        {"role": "system", "content": f"""You are a helpful study assistant. 
+Answer questions based on the following document context.
 If the answer is not in the context, say "I could not find this in the document."
 
 Context:
-{context}
-
-Question: {question}"""
+{context}"""}
+    ]
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": question})
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+        messages=messages
     )
     return response.choices[0].message.content
 
-st.title("Student AI Assistant")
-st.write("Upload a PDF to get a summary, quiz, key points or chat with your document.")
+# Page config
+st.set_page_config(page_title="Student AI Assistant", page_icon="📚", layout="wide")
 
-api_key = st.text_input("Enter your Groq API Key", type="password")
-uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+# Sidebar
+with st.sidebar:
+    st.title("📚 Student AI Assistant")
+    st.write("---")
+    api_key = st.text_input("Enter your Groq API Key", type="password")
+    uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+    st.write("---")
+    st.write("Features:")
+    st.write("✅ Summarize PDF")
+    st.write("✅ Generate Quiz")
+    st.write("✅ Extract Key Points")
+    st.write("✅ Chat with PDF")
+
+# Main area
+st.title("📚 Student AI Assistant")
+st.write("Upload a PDF and start learning smarter.")
 
 if uploaded_file and api_key:
     with st.spinner("Reading PDF..."):
         text = extract_text_from_pdf(uploaded_file)
+        chunks = chunk_text(text)
+        index, chunks = store_chunks(chunks)
 
-    st.success("PDF loaded successfully!")
+    st.success(f"PDF loaded and processed into {len(chunks)} chunks.")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Summarize", "Quiz", "Key Points", "Chat with PDF"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Summarize", "🧠 Quiz", "🔑 Key Points", "💬 Chat with PDF"])
 
     with tab1:
         if st.button("Generate Summary"):
@@ -117,16 +135,27 @@ if uploaded_file and api_key:
 
     with tab4:
         st.subheader("Chat with your PDF")
-        with st.spinner("Processing PDF for chat..."):
-            chunks = chunk_text(text)
-            index, chunks = store_chunks(chunks)
-        st.success(f"PDF processed into {len(chunks)} chunks.")
 
-        question = st.text_input("Ask a question from your PDF")
-        if st.button("Get Answer") and question:
-            with st.spinner("Searching document..."):
-                relevant_chunks = retrieve_chunks(question, index, chunks)
-                client = configure_groq(api_key)
-                answer = answer_question(client, question, relevant_chunks)
-            st.subheader("Answer")
-            st.write(answer)
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        question = st.chat_input("Ask a question from your PDF...")
+        if question:
+            with st.chat_message("user"):
+                st.write(question)
+            st.session_state.messages.append({"role": "user", "content": question})
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    relevant_chunks = retrieve_chunks(question, index, chunks)
+                    client = configure_groq(api_key)
+                    answer = answer_question(client, question, relevant_chunks, st.session_state.messages)
+                st.write(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+
+else:
+    st.info("Please enter your Groq API key and upload a PDF to get started.")

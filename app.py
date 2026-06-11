@@ -107,20 +107,52 @@ End with a summary of your planning decisions and reasoning."""
 
 st.set_page_config(page_title="Student AI Assistant", page_icon="📚", layout="wide")
 
+st.markdown("""
+<style>
+    .main {background-color: #f5f7fa;}
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 8px;
+        padding: 8px 16px;
+        border: none;
+        width: 100%;
+    }
+    .stButton>button:hover {
+        background-color: #45a049;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: bold;
+    }
+    .stSuccess {
+        border-radius: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 with st.sidebar:
     st.title("📚 Student AI Assistant")
     st.write("---")
     api_key = st.text_input("Enter your Groq API Key", type="password")
     uploaded_files = st.file_uploader("Upload your PDFs", type="pdf", accept_multiple_files=True)
     st.write("---")
-    st.write("Features:")
-    st.write("✅ Summarize PDF")
-    st.write("✅ Generate Quiz")
-    st.write("✅ Extract Key Points")
-    st.write("✅ Chat with PDF")
-    st.write("✅ Source Citations")
-    st.write("✅ Multi-PDF Support")
-    st.write("✅ Study Planner Agent")
+    st.markdown("""
+    ### Features
+    | Feature | Status |
+    |---------|--------|
+    | Summarize PDF | ✅ |
+    | MCQ & Theory Quiz | ✅ |
+    | Quiz Difficulty Levels | ✅ |
+    | Download Quiz | ✅ |
+    | Key Points Extraction | ✅ |
+    | Chat with PDF | ✅ |
+    | Source Citations | ✅ |
+    | Conversation Memory | ✅ |
+    | Multi-PDF Support | ✅ |
+    | RAG Pipeline (FAISS) | ✅ |
+    | Study Planner Agent | ✅ |
+    """)
 
 st.title("📚 Student AI Assistant")
 st.write("Upload one or more PDFs and start learning smarter.")

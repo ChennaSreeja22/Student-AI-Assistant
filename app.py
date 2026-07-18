@@ -1,8 +1,13 @@
+import os
 import streamlit as st
 import fitz
 import datetime
+from dotenv import load_dotenv
 from groq import Groq
 from rag_utils import chunk_text_with_metadata, store_chunks, retrieve_chunks_with_metadata
+
+load_dotenv()
+api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
 def extract_text_from_pdf(uploaded_file):
     text = ""
@@ -134,8 +139,14 @@ st.markdown("""
 with st.sidebar:
     st.title("📚 Student AI Assistant")
     st.write("---")
-    api_key = st.text_input("Enter your Groq API Key", type="password")
-    uploaded_files = st.file_uploader("Upload your PDFs", type="pdf", accept_multiple_files=True)
+
+    api_key = os.getenv("GROQ_API_KEY")
+
+    uploaded_files = st.file_uploader(
+        "Upload your PDFs",
+        type="pdf",
+        accept_multiple_files=True
+    )
     st.write("---")
     st.markdown("""
     ### Features
@@ -157,7 +168,7 @@ with st.sidebar:
 st.title("📚 Student AI Assistant")
 st.write("Upload one or more PDFs and start learning smarter.")
 
-if api_key:
+if api_key and api_key.startswith("gsk_"):
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Summarize", "🧠 Quiz", "🔑 Key Points", "💬 Chat with PDF", "📅 Study Planner"])
 
     with tab5:
@@ -273,4 +284,6 @@ if api_key:
             st.info("Please upload a PDF to use this feature.")
 
 else:
-    st.info("Please enter your Groq API key in the sidebar to get started.")
+    st.error(
+    "Groq API key not found. Please add GROQ_API_KEY to your .env file."
+)

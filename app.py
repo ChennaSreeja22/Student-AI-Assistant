@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import fitz
 import datetime
+import time
 from dotenv import load_dotenv
 from groq import Groq
 from rag_utils import chunk_text_with_metadata, store_chunks, retrieve_chunks_with_metadata
@@ -229,6 +230,9 @@ if api_key and api_key.startswith("gsk_"):
                 st.warning("Please enter your subjects and difficulty levels.")
 
     if uploaded_files:
+
+        st.session_state.pipeline_start = time.perf_counter()
+
         with st.spinner("Reading PDFs..."):
             all_chunks = []
             all_metadata = []
@@ -357,7 +361,10 @@ if api_key and api_key.startswith("gsk_"):
             if question:
                 with st.chat_message("user"):
                     st.write(question)
-                st.session_state.messages.append({"role": "user", "content": question})
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": question
+                })
 
                 with st.chat_message("assistant"):
                     try:
@@ -377,12 +384,21 @@ if api_key and api_key.startswith("gsk_"):
                                 st.session_state.messages
                             )
 
+                            pipeline_end = time.perf_counter()
+                            
+                            total_pipeline_time = (
+                                pipeline_end - st.session_state.pipeline_start
+                            )
                     except Exception as e:
                         st.error(f"Unable to answer your question.\n\n{e}")
                         answer = None
             
                 if answer:
                     st.write(answer)
+
+                    st.success(
+                        f"⏱️ Core RAG pipeline time: {total_pipeline_time:.2f} seconds"
+                    )
                     st.write("---")
                     st.markdown("### 📚 Sources")
 

@@ -3,9 +3,10 @@ import streamlit as st
 import fitz
 import datetime
 import time
+import inspect
+import rag_utils
 from dotenv import load_dotenv
 from groq import Groq
-from rag_utils import chunk_text_with_metadata, store_chunks, retrieve_chunks_with_metadata
 from collections import defaultdict
 load_dotenv()
 
@@ -17,11 +18,15 @@ except Exception:
 def extract_text_from_pdf(uploaded_file):
     text = ""
 
-    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+    with fitz.open(
+        stream=uploaded_file.read(),
+        filetype="pdf"
+    ) as doc:
+
         page_count = len(doc)
 
         for page in doc:
-            text += page.get_text()
+            text += page.get_text() + "\n"
 
     return text, page_count
 
@@ -86,40 +91,274 @@ Context:
     )
     return response.choices[0].message.content
 
-def study_planner_agent(client, subjects, hours_per_day, exam_date, difficulty_levels):
+def study_planner_agent(
+    client,
+    subject,
+    difficulty,
+    hours_per_day,
+    exam_date,
+    index,
+    all_chunks,
+    all_metadata
+):
     days_remaining = (exam_date - datetime.date.today()).days
-    prompt = f"""You are an autonomous study planner agent.
-Your job is to create a personalized day-by-day study plan.
 
-Make intelligent decisions about:
-- How many days to allocate per subject based on difficulty
-- Which subjects to study first
-- When to schedule revision sessions
-- How to distribute hours per day
+    # ---------------------------------------------------------
+    # STEP 1: Retrieve topic-related information from the PDF
+    # ---------------------------------------------------------
+
+    topic_queries = [
+        f"main topics and chapters covered in {subject}",
+        f"important concepts and subtopics in {subject}",
+        f"major sections and topics that need to be studied for {subject}",
+        f"important theories formulas and concepts in {subject}"
+    ]
+
+    retrieved_material = []
+
+    for query in topic_queries:
+
+        results = rag_utils.retrieve_chunks_with_metadata(
+        query,
+        index,
+        all_metadata,
+        n_results=3
+    )
+
+        for result in results:
+
+            chunk_text = result["text"]
+
+            if chunk_text not in retrieved_material:
+                retrieved_material.append(chunk_text)
+
+    # Limit the context sent to Llama
+    retrieved_material = retrieved_material[:10]
+
+    study_context = "\n\n".join(retrieved_material)
+
+    # ---------------------------------------------------------
+    # STEP 2: Extract actual topics from retrieved PDF content
+    # ---------------------------------------------------------
+
+    topic_prompt = f"""
+You are the Topic Analysis Agent for a Student AI Assistant.
+
+The student is preparing for:
+
+Subject: {subject}
+Difficulty: {difficulty}
+
+Below are relevant sections retrieved from the student's
+uploaded study material.
+
+Your task is to identify the actual topics and subtopics
+that should be included in the study plan.
+
+IMPORTANT:
+- Use ONLY information present in the retrieved material.
+- Do NOT invent topics.
+- Do not add topics based on general knowledge.
+- Remove duplicate topics.
+- Organize the topics logically.
+
+Retrieved Study Material:
+
+{study_context}
+
+Return a concise list of the main topics and important
+subtopics that the student should study.
+"""
+
+    topic_response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "user",
+                "content": topic_prompt
+            }
+        ]
+    )
+
+    topics = topic_response.choices[0].message.content
+
+    # ---------------------------------------------------------
+    # STEP 3: Generate initial study plan
+    # ---------------------------------------------------------
+
+    planning_prompt = f"""
+You are an autonomous Study Planning Agent.
+
+Create a personalized study plan for ONE subject.
 
 Student Information:
-- Subjects: {subjects}
-- Difficulty levels: {difficulty_levels}
-- Available hours per day: {hours_per_day}
+- Subject: {subject}
+- Difficulty: {difficulty}
+- Available study time: {hours_per_day} hours/day
 - Exam date: {exam_date}
-- Days remaining: {days_remaining} days
+- Days remaining: {days_remaining}
 
-Create a detailed day-by-day study plan. For each day specify:
+Topics extracted from the student's uploaded study material:
+
+{topics}
+
+Create a detailed day-by-day study plan.
+
+Rules:
+- Use ONLY the extracted topics.
+- Do not invent additional topics.
+- Never exceed {hours_per_day} hours per day.
+- Give greater priority to difficult topics.
+- Include revision sessions.
+- Include practice/problem-solving where appropriate.
+- Complete the important topics before the exam.
+
+For each day specify:
 - Date
-- Subject to study
-- Topics to cover
+- Topic
 - Hours allocated
-- Study strategy (new topic / revision / practice problems)
+- Study strategy
 
-End with a summary of your planning decisions and reasoning."""
+Return the initial study plan.
+"""
 
-    response = client.chat.completions.create(
+    planning_response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {
+                "role": "user",
+                "content": planning_prompt
+            }
+        ]
     )
-    return response.choices[0].message.content
 
-st.set_page_config(page_title="Student AI Assistant", page_icon="📚", layout="wide")
+    initial_plan = planning_response.choices[0].message.content
+
+    # ---------------------------------------------------------
+    # STEP 4: Evaluate the initial plan
+    # ---------------------------------------------------------
+
+    evaluation_prompt = f"""
+You are a Study Plan Evaluation Agent.
+
+Evaluate the following study plan against the student's
+requirements.
+
+Subject: {subject}
+Difficulty: {difficulty}
+Available study time: {hours_per_day} hours/day
+Exam date: {exam_date}
+Days remaining: {days_remaining}
+
+Required topics:
+{topics}
+
+Initial study plan:
+{initial_plan}
+
+Check:
+
+1. Are the important topics covered?
+2. Does the plan use only the extracted topics?
+3. Does any day exceed {hours_per_day} hours?
+4. Is enough time given to difficult topics?
+5. Is revision included?
+6. Is the workload realistic?
+7. Can the plan be completed before the exam?
+
+Return:
+
+STATUS: PASS
+
+or
+
+STATUS: FAIL
+
+Then provide:
+
+PROBLEMS:
+- ...
+
+RECOMMENDATIONS:
+- ...
+"""
+
+    evaluation_response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "user",
+                "content": evaluation_prompt
+            }
+        ]
+    )
+
+    evaluation = evaluation_response.choices[0].message.content
+
+    # ---------------------------------------------------------
+    # STEP 5: Revise if evaluation fails
+    # ---------------------------------------------------------
+
+    if "STATUS: PASS" in evaluation.upper():
+
+        final_plan = initial_plan
+
+    else:
+
+        revision_prompt = f"""
+You are a Study Planning Agent revising your own study plan.
+
+Student Information:
+- Subject: {subject}
+- Difficulty: {difficulty}
+- Available study time: {hours_per_day} hours/day
+- Exam date: {exam_date}
+- Days remaining: {days_remaining}
+
+Required topics:
+{topics}
+
+Initial study plan:
+{initial_plan}
+
+Evaluation:
+{evaluation}
+
+Create a revised study plan that fixes ALL problems identified
+by the Evaluation Agent.
+
+Rules:
+- Use only the provided topics.
+- Never exceed {hours_per_day} hours per day.
+- Give appropriate priority to difficult topics.
+- Include revision.
+- Cover all important topics.
+- Make the workload realistic.
+- Complete the material before the exam.
+
+Return ONLY the final revised study plan.
+"""
+
+        revision_response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "user",
+                    "content": revision_prompt
+                }
+            ]
+        )
+
+        final_plan = revision_response.choices[0].message.content
+
+    return final_plan
+
+
+st.set_page_config(
+    page_title="Student AI Assistant",
+    page_icon="📚",
+    layout="wide"
+)
 
 st.markdown("""
 <style>
@@ -182,52 +421,89 @@ if api_key and api_key.startswith("gsk_"):
 
     with tab5:
         st.subheader("📅 Study Planner Agent")
-        st.write("The agent will autonomously create a personalized study plan for you.")
+        st.write(
+            "Upload study material for one subject. The agent analyzes "
+            "your material, creates a study plan, evaluates it against "
+            "your constraints, and revises it when necessary."
+        )
 
-        subjects_input = st.text_area("Enter your subjects (one per line)", placeholder="Mathematics\nPhysics\nChemistry")
-        difficulty_input = st.text_area("Enter difficulty for each subject (one per line)", placeholder="Hard\nMedium\nEasy")
-        hours_per_day = st.slider("Study hours per day", 1, 12, 4)
-        exam_date = st.date_input("Exam date", min_value=datetime.date.today())
+        subject_input = st.text_input(
+            "Subject",
+            placeholder="e.g., Mathematics"
+        )
+
+        difficulty = st.selectbox(
+            "Subject Difficulty",
+            ["Easy", "Medium", "Hard"]
+        )
+
+        hours_per_day = st.slider(
+            "Study hours per day",
+            1,
+            12,
+            4
+        )
+
+        exam_date = st.date_input(
+            "Exam date",
+            min_value=datetime.date.today()
+        )
 
         if st.button("Generate Study Plan"):
-            if subjects_input and difficulty_input:
 
-                subjects = subjects_input.strip().split("\n")
-                difficulty_levels = difficulty_input.strip().split("\n")
+            if not subject_input:
 
-                if len(subjects) != len(difficulty_levels):
-                    st.error("Please enter one difficulty level for each subject.")
-                   
+                st.warning("Please enter the subject name.")
+
+            elif "rag_index" not in st.session_state:
+
+                st.warning(
+                    "Please upload the study material for this subject first."
+                )
+            else:
+
                 try:
-                    with st.spinner("Agent is creating your personalized study plan..."):
+
+                    with st.spinner(
+                        "🤖 Planner Agent is generating and evaluating your study plan..."
+                    ):
+
                         client = configure_groq(api_key)
+
+                        planner_start = time.perf_counter()
 
                         plan = study_planner_agent(
                             client,
-                            subjects,
+                            subject_input,
+                            difficulty,
                             hours_per_day,
                             exam_date,
-                            difficulty_levels
+                            st.session_state["rag_index"],
+                            st.session_state["rag_chunks"],
+                            st.session_state["rag_metadata"]
                         )
+
+                        planner_time = time.perf_counter() - planner_start
 
                         st.subheader("📅 Your Personalized Study Plan")
                         st.write(plan)
 
-                        st.download_button(
-                            label="Download Study Plan",
-                            data=plan,
-                            file_name="study_plan.txt",
-                            mime="text/plain"
+                        st.info(
+                            f"⏱️ Study Planner execution time: {planner_time:.2f} seconds"
                         )
 
-                except Exception as e:
-                    st.error(f"Unable to generate study plan.\n\n{e}")
+                    st.download_button(
+                        label="⬇️ Download Study Plan",
+                        data=plan,
+                        file_name="study_plan.txt",
+                        mime="text/plain"
+                    )
 
-                    st.subheader("Your Personalized Study Plan")
-                    st.write(plan)
-        
-            else:
-                st.warning("Please enter your subjects and difficulty levels.")
+                except Exception as e:
+
+                    st.error(
+                        f"Unable to generate study plan.\n\n{e}"
+                    )
 
     if uploaded_files:
 
@@ -240,6 +516,7 @@ if api_key and api_key.startswith("gsk_"):
             total_pages = 0
 
             for uploaded_file in uploaded_files:
+
                 text, page_count = extract_text_from_pdf(uploaded_file)
 
                 pdf_info.append({
@@ -249,15 +526,21 @@ if api_key and api_key.startswith("gsk_"):
 
                 total_pages += page_count
 
-                chunks, metadata = chunk_text_with_metadata(
+                chunks, metadata = rag_utils.chunk_text_with_metadata(
                     text,
                     uploaded_file.name
                 )
 
                 all_chunks.extend(chunks)
                 all_metadata.extend(metadata)
-            index, all_chunks = store_chunks(all_chunks)
+            index, all_chunks = rag_utils.store_chunks(all_chunks)
+            st.session_state["rag_index"] = index
+            st.session_state["rag_chunks"] = all_chunks
+            st.session_state["rag_metadata"] = all_metadata
             text = " ".join(all_chunks)
+
+            # Store uploaded study material for the Study Planner Agent
+            st.session_state["study_material"] = text
 
             with doc_info.container():
 
@@ -371,7 +654,7 @@ if api_key and api_key.startswith("gsk_"):
                         with st.spinner("Thinking..."):
 
                             start_time = time.perf_counter()
-                            relevant_results = retrieve_chunks_with_metadata(
+                            relevant_results = rag_utils.retrieve_chunks_with_metadata(
                                 question,
                                 index,
                                 all_metadata

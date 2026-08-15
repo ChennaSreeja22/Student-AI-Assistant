@@ -369,6 +369,8 @@ if api_key and api_key.startswith("gsk_"):
                 with st.chat_message("assistant"):
                     try:
                         with st.spinner("Thinking..."):
+
+                            start_time = time.perf_counter()
                             relevant_results = retrieve_chunks_with_metadata(
                                 question,
                                 index,
@@ -384,11 +386,9 @@ if api_key and api_key.startswith("gsk_"):
                                 st.session_state.messages
                             )
 
-                            pipeline_end = time.perf_counter()
-                            
-                            total_pipeline_time = (
-                                pipeline_end - st.session_state.pipeline_start
-                            )
+                            end_time = time.perf_counter()
+
+                        rag_time = end_time - start_time   
                     except Exception as e:
                         st.error(f"Unable to answer your question.\n\n{e}")
                         answer = None

@@ -397,7 +397,7 @@ if api_key and api_key.startswith("gsk_"):
                     st.write(answer)
 
                     st.success(
-                        f"⏱️ Core RAG pipeline time: {total_pipeline_time:.2f} seconds"
+                        f"⏱️ Core RAG pipeline: {rag_time:.2f} seconds"
                     )
                     st.write("---")
                     st.markdown("### 📚 Sources")

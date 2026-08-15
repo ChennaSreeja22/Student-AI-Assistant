@@ -103,10 +103,6 @@ def study_planner_agent(
 ):
     days_remaining = (exam_date - datetime.date.today()).days
 
-    # ---------------------------------------------------------
-    # STEP 1: Retrieve topic-related information from the PDF
-    # ---------------------------------------------------------
-
     topic_queries = [
         f"main topics and chapters covered in {subject}",
         f"important concepts and subtopics in {subject}",
@@ -132,14 +128,10 @@ def study_planner_agent(
             if chunk_text not in retrieved_material:
                 retrieved_material.append(chunk_text)
 
-    # Limit the context sent to Llama
+    
     retrieved_material = retrieved_material[:10]
 
     study_context = "\n\n".join(retrieved_material)
-
-    # ---------------------------------------------------------
-    # STEP 2: Extract actual topics from retrieved PDF content
-    # ---------------------------------------------------------
 
     topic_prompt = f"""
 You are the Topic Analysis Agent for a Student AI Assistant.
@@ -181,10 +173,6 @@ subtopics that the student should study.
     )
 
     topics = topic_response.choices[0].message.content
-
-    # ---------------------------------------------------------
-    # STEP 3: Generate initial study plan
-    # ---------------------------------------------------------
 
     planning_prompt = f"""
 You are an autonomous Study Planning Agent.
@@ -233,10 +221,6 @@ Return the initial study plan.
     )
 
     initial_plan = planning_response.choices[0].message.content
-
-    # ---------------------------------------------------------
-    # STEP 4: Evaluate the initial plan
-    # ---------------------------------------------------------
 
     evaluation_prompt = f"""
 You are a Study Plan Evaluation Agent.
@@ -294,10 +278,6 @@ RECOMMENDATIONS:
     )
 
     evaluation = evaluation_response.choices[0].message.content
-
-    # ---------------------------------------------------------
-    # STEP 5: Revise if evaluation fails
-    # ---------------------------------------------------------
 
     if "STATUS: PASS" in evaluation.upper():
 
